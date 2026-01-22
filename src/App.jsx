@@ -74,9 +74,7 @@ function App() {
           </div>
           
           {contractData && (
-            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f0f0f0' , color: '#000'q
-              
-            }}>
+            <div style={{ marginTop: '1rem', padding: '1rem', background: '#f0f0f0' , color: '#000'}}>
               <h3>{contractData.name} ({contractData.symbol})</h3>
               <p>Your balance: {contractData.balance}</p>
             </div>
