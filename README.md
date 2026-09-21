@@ -9,7 +9,7 @@ This is a focused sample, not a production wallet or indexer.
 - **Wallet connect** — request accounts, show ETH balance, detect chain changes, and offer a switch to Sepolia.
 - **Chainlink ETH/USD read** — calls `latestRoundData()` on the Sepolia ETH/USD aggregator. No wallet is required; this uses a public RPC.
 - **ERC-20 read** — `name`, `symbol`, `decimals`, and `balanceOf` for a token address (Sepolia WETH / USDC presets included).
-- **Transaction history** — native and ERC-20 transfers for the connected address via the free Blockscout Sepolia API. Optional Etherscan API key is a fallback. If explorers fail, the app scans the last 40 blocks over RPC.
+- **Transaction history** — loads automatically after connect. Native and ERC-20 transfers for the connected address come from the free Blockscout Sepolia API (no key). Optional Etherscan API key is a fallback. If explorers fail, the app scans the last 40 blocks over RPC.
 - **Testnet-only write** — a labeled **0 ETH self-transfer** that is disabled off Sepolia. It spends gas only and does not move funds.
 
 ## How to run
@@ -64,7 +64,7 @@ src/
 ## Limitations
 
 - History is **Sepolia-first**. Other chains only get a short RPC lookback.
-- Blockscout / Etherscan can rate-limit. The RPC fallback only sees recent blocks and is not a full indexer.
+- Blockscout / Etherscan can rate-limit or time out. The RPC fallback only sees recent blocks, only native transfers, and is not a full indexer.
 - Public RPCs can be slow or reject browser CORS; set `VITE_SEPOLIA_RPC_URL` if the price feed fails.
 - There is no ENS, no fiat conversion beyond the Chainlink feed, and no mainnet send flow.
 - Do not use this app to move real funds.

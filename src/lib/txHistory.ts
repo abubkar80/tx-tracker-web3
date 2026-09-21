@@ -1,9 +1,4 @@
-import {
-  formatEther,
-  formatUnits,
-  type BrowserProvider,
-  type TransactionResponse,
-} from 'ethers'
+import { formatEther, formatUnits, type BrowserProvider } from 'ethers'
 import {
   BLOCKSCOUT_SEPOLIA_API,
   ETHERSCAN_V2_API,
@@ -38,8 +33,22 @@ type ExplorerTx = {
   tokenDecimal?: string
 }
 
+type RpcBlock = {
+  timestamp?: string
+  transactions?: Array<RpcTx | string>
+}
+
+type RpcTx = {
+  hash: string
+  from?: string
+  to?: string | null
+  value?: string
+}
+
 const HISTORY_LIMIT = 25
 const RPC_LOOKBACK_BLOCKS = 40
+const RPC_BATCH_SIZE = 8
+const EXPLORER_TIMEOUT_MS = 12_000
 
 function etherscanApiKey(): string {
   return import.meta.env.VITE_ETHERSCAN_API_KEY?.trim() ?? ''
@@ -85,7 +94,7 @@ function toTokenRecord(
 async function fetchExplorerList(
   url: URL,
 ): Promise<{ status: string; message: string; result: ExplorerTx[] | string }> {
-  const response = await fetch(url)
+  const response = await fetch(url, { signal: AbortSignal.timeout(EXPLORER_TIMEOUT_MS) })
   if (!response.ok) {
     throw new Error(`Explorer HTTP ${response.status}`)
   }
@@ -108,54 +117,45 @@ function unwrapResult(
   return payload.result
 }
 
-async function fetchBlockscout(address: string): Promise<TxRecord[]> {
-  const nativeUrl = new URL(BLOCKSCOUT_SEPOLIA_API)
-  nativeUrl.searchParams.set('module', 'account')
-  nativeUrl.searchParams.set('action', 'txlist')
-  nativeUrl.searchParams.set('address', address)
-  nativeUrl.searchParams.set('page', '1')
-  nativeUrl.searchParams.set('offset', String(HISTORY_LIMIT))
-  nativeUrl.searchParams.set('sort', 'desc')
+function explorerQuery(base: string, action: string, address: string, extra?: Record<string, string>): URL {
+  const url = new URL(base)
+  url.searchParams.set('module', 'account')
+  url.searchParams.set('action', action)
+  url.searchParams.set('address', address)
+  url.searchParams.set('page', '1')
+  url.searchParams.set('offset', String(HISTORY_LIMIT))
+  url.searchParams.set('sort', 'desc')
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      url.searchParams.set(key, value)
+    }
+  }
+  return url
+}
 
-  const tokenUrl = new URL(BLOCKSCOUT_SEPOLIA_API)
-  tokenUrl.searchParams.set('module', 'account')
-  tokenUrl.searchParams.set('action', 'tokentx')
-  tokenUrl.searchParams.set('address', address)
-  tokenUrl.searchParams.set('page', '1')
-  tokenUrl.searchParams.set('offset', String(HISTORY_LIMIT))
-  tokenUrl.searchParams.set('sort', 'desc')
+async function fetchExplorerHistory(
+  address: string,
+  source: 'blockscout' | 'etherscan',
+  extra?: Record<string, string>,
+): Promise<TxRecord[]> {
+  const base = source === 'blockscout' ? BLOCKSCOUT_SEPOLIA_API : ETHERSCAN_V2_API
+  const nativeUrl = explorerQuery(base, 'txlist', address, extra)
+  const tokenUrl = explorerQuery(base, 'tokentx', address, extra)
 
   const [nativePayload, tokenPayload] = await Promise.all([
     fetchExplorerList(nativeUrl),
     fetchExplorerList(tokenUrl),
   ])
 
-  const native = unwrapResult(nativePayload).map((tx) =>
-    toNativeRecord(tx, 'blockscout'),
-  )
+  const native = unwrapResult(nativePayload).map((tx) => toNativeRecord(tx, source))
   let tokens: TxRecord[] = []
   try {
-    tokens = unwrapResult(tokenPayload).map((tx) => toTokenRecord(tx, 'blockscout'))
+    tokens = unwrapResult(tokenPayload).map((tx) => toTokenRecord(tx, source))
   } catch {
     tokens = []
   }
 
   return mergeHistory(native, tokens)
-}
-
-async function fetchEtherscan(address: string, apiKey: string): Promise<TxRecord[]> {
-  const url = new URL(ETHERSCAN_V2_API)
-  url.searchParams.set('chainid', SEPOLIA_CHAIN_ID.toString())
-  url.searchParams.set('module', 'account')
-  url.searchParams.set('action', 'txlist')
-  url.searchParams.set('address', address)
-  url.searchParams.set('page', '1')
-  url.searchParams.set('offset', String(HISTORY_LIMIT))
-  url.searchParams.set('sort', 'desc')
-  url.searchParams.set('apikey', apiKey)
-
-  const payload = await fetchExplorerList(url)
-  return unwrapResult(payload).map((tx) => toNativeRecord(tx, 'etherscan'))
 }
 
 function mergeHistory(...lists: TxRecord[][]): TxRecord[] {
@@ -171,6 +171,23 @@ function mergeHistory(...lists: TxRecord[][]): TxRecord[] {
     .slice(0, HISTORY_LIMIT)
 }
 
+function isRpcTx(tx: RpcTx | string): tx is RpcTx {
+  return typeof tx === 'object' && tx !== null && 'hash' in tx
+}
+
+async function getBlockWithTransactions(
+  provider: BrowserProvider,
+  blockNumber: number,
+): Promise<{ timestamp: number; transactions: RpcTx[] } | null> {
+  const tag = `0x${blockNumber.toString(16)}`
+  const block = (await provider.send('eth_getBlockByNumber', [tag, true])) as RpcBlock | null
+  if (!block) return null
+  return {
+    timestamp: Number(block.timestamp ?? 0),
+    transactions: (block.transactions ?? []).filter(isRpcTx),
+  }
+}
+
 async function scanRecentBlocks(
   provider: BrowserProvider,
   address: string,
@@ -179,31 +196,42 @@ async function scanRecentBlocks(
   const current = await provider.getBlockNumber()
   const history: TxRecord[] = []
 
+  const blockNumbers: number[] = []
   for (let i = 0; i < RPC_LOOKBACK_BLOCKS; i += 1) {
     const blockNumber = current - i
     if (blockNumber < 0) break
-    const block = await provider.getBlock(blockNumber, true)
-    if (!block) continue
+    blockNumbers.push(blockNumber)
+  }
 
-    for (const tx of block.prefetchedTransactions as TransactionResponse[]) {
-      const from = tx.from?.toLowerCase() ?? ''
-      const to = tx.to?.toLowerCase() ?? ''
-      if (from !== mine && to !== mine) continue
-      history.push({
-        hash: tx.hash,
-        from: tx.from,
-        to: tx.to ?? 'Contract creation',
-        valueEth: formatEther(tx.value),
-        blockNumber,
-        timestamp: block.timestamp,
-        kind: 'native',
-        isError: false,
-        source: 'rpc',
-      })
+  for (let i = 0; i < blockNumbers.length; i += RPC_BATCH_SIZE) {
+    const batch = blockNumbers.slice(i, i + RPC_BATCH_SIZE)
+    const blocks = await Promise.all(
+      batch.map((blockNumber) => getBlockWithTransactions(provider, blockNumber)),
+    )
+
+    for (const [index, block] of blocks.entries()) {
+      const blockNumber = batch[index]
+      if (!block || blockNumber === undefined) continue
+      for (const tx of block.transactions) {
+        const from = tx.from?.toLowerCase() ?? ''
+        const to = tx.to?.toLowerCase() ?? ''
+        if (from !== mine && to !== mine) continue
+        history.push({
+          hash: tx.hash,
+          from: tx.from ?? 'Unknown',
+          to: tx.to ?? 'Contract creation',
+          valueEth: formatEther(tx.value || '0'),
+          blockNumber,
+          timestamp: block.timestamp || undefined,
+          kind: 'native',
+          isError: false,
+          source: 'rpc',
+        })
+      }
     }
   }
 
-  return history
+  return history.sort((a, b) => b.blockNumber - a.blockNumber).slice(0, HISTORY_LIMIT)
 }
 
 export type TxHistoryResult = {
@@ -219,7 +247,7 @@ export async function fetchAddressHistory(
 ): Promise<TxHistoryResult> {
   if (isSepolia(chainId)) {
     try {
-      const transactions = await fetchBlockscout(address)
+      const transactions = await fetchExplorerHistory(address, 'blockscout')
       return {
         transactions,
         source: 'blockscout',
@@ -231,7 +259,10 @@ export async function fetchAddressHistory(
       const apiKey = etherscanApiKey()
       if (apiKey) {
         try {
-          const transactions = await fetchEtherscan(address, apiKey)
+          const transactions = await fetchExplorerHistory(address, 'etherscan', {
+            chainid: SEPOLIA_CHAIN_ID.toString(),
+            apikey: apiKey,
+          })
           return {
             transactions,
             source: 'etherscan',
@@ -259,5 +290,8 @@ export async function fetchAddressHistory(
 }
 
 function getShortMessage(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'TimeoutError') {
+    return 'explorer request timed out'
+  }
   return err instanceof Error ? err.message : 'unknown error'
 }

@@ -1,5 +1,5 @@
 import type { BrowserProvider } from 'ethers'
-import { explorerTxUrl, formatTimestamp, shortenAddress } from '../lib/format'
+import { explorerTxUrl, formatAmount, formatTimestamp, shortenAddress } from '../lib/format'
 import { useTxHistory } from '../hooks/useTxHistory'
 
 type Props = {
@@ -23,13 +23,14 @@ export function TxHistory({ provider, account, chainId }: Props) {
           <h2>Recent transactions</h2>
         </div>
         <button type="button" onClick={() => void fetchHistory()} disabled={loading}>
-          {loading ? 'Fetching…' : 'Fetch history'}
+          {loading ? 'Fetching…' : result ? 'Refresh history' : 'Fetch history'}
         </button>
       </div>
       <p className="muted">
-        On Sepolia this uses the free Blockscout explorer API (native transfers plus ERC-20
-        token transfers). An optional Etherscan key is a fallback. If both explorers fail,
-        the app scans the last 40 blocks over RPC — that path still misses older activity.
+        History loads automatically after you connect. On Sepolia this uses the free
+        Blockscout explorer API (native transfers plus ERC-20 token transfers). An optional
+        Etherscan key is a fallback. If both explorers fail, the app scans the last 40
+        blocks over RPC — that path still misses older activity.
       </p>
 
       {result && <p className="banner info">{result.note}</p>}
@@ -69,9 +70,7 @@ export function TxHistory({ provider, account, chainId }: Props) {
                   <td>{shortenAddress(tx.from)}</td>
                   <td>{shortenAddress(tx.to)}</td>
                   <td className="num">
-                    {Number(tx.valueEth).toLocaleString(undefined, {
-                      maximumFractionDigits: 6,
-                    })}
+                    {formatAmount(tx.valueEth)}
                     {tx.kind === 'erc20' && tx.tokenSymbol ? ` ${tx.tokenSymbol}` : ' ETH'}
                   </td>
                   <td className="num">{tx.blockNumber}</td>

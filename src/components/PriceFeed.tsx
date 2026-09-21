@@ -1,5 +1,6 @@
 import { SEPOLIA_ETH_USD_FEED } from '../constants/contracts'
-import { explorerAddressUrl, formatTimestamp } from '../lib/format'
+import { SEPOLIA_CHAIN_ID } from '../constants/networks'
+import { explorerAddressUrl, formatAmount, formatTimestamp } from '../lib/format'
 import { sepoliaRpcUrl } from '../lib/providers'
 import { useEthUsdPrice } from '../hooks/useEthUsdPrice'
 
@@ -21,7 +22,7 @@ export function PriceFeed() {
       <p className="muted">
         Calls <code>latestRoundData()</code> on the Chainlink aggregator{' '}
         <a
-          href={explorerAddressUrl(11155111n, SEPOLIA_ETH_USD_FEED.address)}
+          href={explorerAddressUrl(SEPOLIA_CHAIN_ID, SEPOLIA_ETH_USD_FEED.address)}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -29,6 +30,7 @@ export function PriceFeed() {
         </a>{' '}
         through a public Sepolia RPC ({sepoliaRpcUrl()}).
       </p>
+      {loading && !price && <p className="muted">Reading latestRoundData from Sepolia…</p>}
       {price && (
         <dl className="stat-grid">
           <div>
@@ -40,7 +42,7 @@ export function PriceFeed() {
             <dd>
               {usd !== null && Number.isFinite(usd)
                 ? `$${usd.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                : `$${price.usd}`}
+                : `$${formatAmount(price.usd, 2)}`}
             </dd>
           </div>
           <div>

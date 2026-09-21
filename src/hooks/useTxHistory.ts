@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { BrowserProvider } from 'ethers'
 import {
   fetchAddressHistory,
@@ -32,6 +32,15 @@ export function useTxHistory(
       setLoading(false)
     }
   }, [account, chainId, provider])
+
+  useEffect(() => {
+    if (!provider || !account) {
+      setResult(null)
+      setError(null)
+      return
+    }
+    void fetchHistory()
+  }, [account, fetchHistory, provider])
 
   return { result, loading, error, fetchHistory }
 }

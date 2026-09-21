@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { BrowserProvider } from 'ethers'
 import { SEPOLIA_ERC20_PRESETS } from '../constants/contracts'
 import { isSepolia } from '../constants/networks'
-import { explorerAddressUrl } from '../lib/format'
+import { explorerAddressUrl, formatAmount } from '../lib/format'
 import { useErc20Read } from '../hooks/useErc20Read'
 
 type Props = {
@@ -70,10 +70,7 @@ export function Erc20Reader({ provider, account, chainId }: Props) {
           <div>
             <dt>Your balance</dt>
             <dd>
-              {Number(data.formattedBalance).toLocaleString(undefined, {
-                maximumFractionDigits: 6,
-              })}{' '}
-              {data.symbol}
+              {formatAmount(data.formattedBalance)} {data.symbol}
             </dd>
           </div>
           <div>

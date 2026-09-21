@@ -1,5 +1,5 @@
 import { isSepolia, networkLabel } from '../constants/networks'
-import { explorerAddressUrl, shortenAddress } from '../lib/format'
+import { explorerAddressUrl, formatAmount, shortenAddress } from '../lib/format'
 import type { WalletState } from '../hooks/useWallet'
 
 type Props = {
@@ -60,9 +60,7 @@ export function WalletPanel({ wallet }: Props) {
           <div>
             <dt>ETH balance</dt>
             <dd>
-              {wallet.ethBalance !== null
-                ? `${Number(wallet.ethBalance).toLocaleString(undefined, { maximumFractionDigits: 6 })} ETH`
-                : '—'}
+              {wallet.ethBalance !== null ? `${formatAmount(wallet.ethBalance)} ETH` : '—'}
             </dd>
           </div>
         </dl>

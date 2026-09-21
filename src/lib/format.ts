@@ -19,3 +19,13 @@ export function formatTimestamp(seconds?: number): string {
   if (!seconds) return '—'
   return new Date(seconds * 1000).toLocaleString()
 }
+
+/** Trim a decimal string without going through Number(), which loses wei precision. */
+export function formatAmount(value: string, maxFractionDigits = 6): string {
+  const negative = value.startsWith('-')
+  const unsigned = negative ? value.slice(1) : value
+  const [whole, fraction = ''] = unsigned.split('.')
+  const trimmedFraction = fraction.slice(0, maxFractionDigits).replace(/0+$/, '')
+  const rendered = trimmedFraction ? `${whole}.${trimmedFraction}` : whole
+  return negative ? `-${rendered}` : rendered
+}
